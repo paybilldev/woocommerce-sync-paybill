@@ -1,0 +1,83 @@
+name: Build
+
+on:
+  workflow_call:
+  push:
+    branches:
+      - trunk
+      - develop
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  BuildExtensionBundle:
+    name: Build extension bundle
+    runs-on: ubuntu-latest
+    env:
+      FORCE_COLOR: 2
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Prepare PHP
+        uses: woocommerce/grow/prepare-php@actions-v2
+        with:
+          install-deps: "no"
+
+      - name: Prepare node
+        uses: woocommerce/grow/prepare-node@actions-v2
+        with:
+          node-version-file: ".nvmrc"
+          ignore-scripts: "no"
+
+      - name: Build production bundle
+        run: |
+          echo "::group::Build log"
+          npm run build
+          echo "::endgroup::"
+
+      # Since BundleWatch is having issues when getting some environment variables from GitHub Actions,
+      # it needs some workarounds to specify `CI_COMMIT_SHA`, `CI_BRANCH`, and `CI_BRANCH_BASE` here.
+      # References:
+      # - https://github.com/bundlewatch/bundlewatch/blob/v0.3.2/src/app/config/getCIVars.js#L8-L10
+      # - https://github.com/bundlewatch/bundlewatch/issues/423
+      # - https://github.com/bundlewatch/bundlewatch/issues/220
+      - name: Prepare BundleWatch env values - push
+        if: ${{ github.event_name == 'push' }}
+        run: |
+          BRANCH=$(echo '${{ github.event.ref }}' | sed 's/^refs\/heads\///')
+          echo "CI_BRANCH=$BRANCH" >> $GITHUB_ENV
+          echo "CI_BRANCH_BASE=$BRANCH" >> $GITHUB_ENV
+          echo "CI_COMMIT_SHA=${{ github.sha }}" >> $GITHUB_ENV
+
+      - name: Prepare BundleWatch env values - pull request
+        if: ${{ github.event_name == 'pull_request' }}
+        env:
+          HEAD_REF: ${{ github.head_ref }}
+        run: |
+          echo "CI_BRANCH=${HEAD_REF}" >> $GITHUB_ENV
+          echo "CI_BRANCH_BASE=${{ github.base_ref }}" >> $GITHUB_ENV
+          echo "CI_COMMIT_SHA=${{ github.event.pull_request.head.sha }}" >> $GITHUB_ENV
+
+      - name: Run BundleWatch
+        env:
+          BUNDLEWATCH_GITHUB_TOKEN: ${{ secrets.BUNDLEWATCH_GITHUB_TOKEN }}
+        run: node ./node_modules/bundlewatch/lib/bin/index.js
+
+      - name: Publish dev build to GitHub
+        if: ${{ github.event_name == 'push' && github.ref_name == 'develop' }}
+        uses: woocommerce/grow/publish-extension-dev-build@actions-v2
+        with:
+          extension-asset-path: woocommerce-sync-paybill.zip
+
+      - name: Publish build artifact
+        if: ${{ ! ( github.event_name == 'push' && github.ref_name == 'develop' ) }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: woocommerce-sync-paybill.zip
+          path: ${{ github.workspace }}/woocommerce-sync-paybill.zip
+          # Do not bloat the storage. Keep in only long enough for a caller workflow to pick it up and follow up with some manual debugging.
+          retention-days: 2

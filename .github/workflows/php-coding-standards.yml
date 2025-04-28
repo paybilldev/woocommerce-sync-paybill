@@ -1,0 +1,40 @@
+name: PHP Coding Standards
+
+on:
+  push:
+    branches:
+      - trunk
+      - develop
+    paths:
+      - "**.php"
+      - .github/workflows/php-coding-standards.yml
+  pull_request:
+    paths:
+      - "**.php"
+      - .github/workflows/php-coding-standards.yml
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  phpcs:
+    name: PHP coding standards
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Prepare PHP
+        uses: woocommerce/grow/prepare-php@actions-v2
+        with:
+          tools: cs2pr
+
+      - name: Log PHPCS information
+        run: vendor/bin/phpcs -i
+
+      - name: Run PHPCS on all files
+        run: vendor/bin/phpcs ./* -q --report=checkstyle | cs2pr
+
+      - name: Run PHPCS on all tests
+        run: vendor/bin/phpcs -q --standard=tests/phpcs.xml.dist --report=checkstyle | cs2pr

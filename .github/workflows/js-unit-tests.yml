@@ -1,0 +1,48 @@
+name: JavaScript Unit Tests
+
+on:
+  push:
+    branches:
+      - trunk
+      - develop
+    paths:
+      - "**.js"
+      - package.json
+      - package-lock.json
+      - .github/workflows/js-unit-tests.yml
+  pull_request:
+    paths:
+      - "**.js"
+      - package.json
+      - package-lock.json
+      - .github/workflows/js-unit-tests.yml
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  UnitTests:
+    name: JavaScript unit tests
+    runs-on: ubuntu-latest
+    env:
+      FORCE_COLOR: 2
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Prepare node
+        uses: woocommerce/grow/prepare-node@actions-v2
+        with:
+          node-version-file: ".nvmrc"
+
+      - name: Run JavaScript unit tests
+        run: npm run test:js
+
+      - name: Upload JS unit coverage report
+        uses: codecov/codecov-action@v4
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: coverage/clover.xml
+          flags: js-unit-tests
+          name: js-coverage-report
